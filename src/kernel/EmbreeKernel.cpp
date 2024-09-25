@@ -106,13 +106,11 @@ MStatus EmbreeKernel::build(const MObject& meshObject, const MBoundingBox& bbox,
     // collect all triangles
     std::vector<RTCBuildPrimitive> primitives;
     MItMeshPolygon itPoly(meshObject);
-    MVector normal;
-    int numTriangles;
     int primId = 0;
     for(; !itPoly.isDone(); itPoly.next()) {
 
+        int numTriangles;
         itPoly.numTriangles(numTriangles);
-        itPoly.getNormal(normal, MSpace::kObject);
 
         for (int triangleId=0; triangleId < numTriangles; ++triangleId) {
             MPointArray points;
@@ -123,8 +121,7 @@ MStatus EmbreeKernel::build(const MObject& meshObject, const MBoundingBox& bbox,
                     triangleId,
                     points[0] * offsetMatrix,
                     points[1] * offsetMatrix,
-                    points[2] * offsetMatrix,
-                    normal);
+                    points[2] * offsetMatrix);
 
             RTCBuildPrimitive prim;
             prim.lower_x = (float)triangle.bbox.min().x;

@@ -6,7 +6,6 @@
 
 #include "SpatialDivisionKernel.h"
 #include "IntersectionMarkerData.h"
-#include "utility.h"
 
 #include <string>
 #include <vector>
@@ -59,8 +58,8 @@ struct pair_hash {
 
 // The type for the value of the cache
 struct CacheResultType {
-    std::vector<IntersectionMarkerData::FaceData> first;
-    std::vector<IntersectionMarkerData::FaceData> second;
+    std::unordered_set<int> first;
+    std::unordered_set<int> second;
 };
 
 
@@ -180,9 +179,6 @@ public:
     static MString      drawRegistrantId;
 
   static CacheType      cache;
-    // std::unordered_set<int> intersectedFaceIdsA;
-    // std::unordered_set<int> intersectedFaceIdsB;
-
-    std::vector<IntersectionMarkerData::FaceData> intersectedFacesA;
-    std::vector<IntersectionMarkerData::FaceData> intersectedFacesB;
+    std::unordered_set<int> intersectedFaceIdsA;
+    std::unordered_set<int> intersectedFaceIdsB;
 };

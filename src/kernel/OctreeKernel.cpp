@@ -30,8 +30,6 @@ MStatus OctreeKernel::build(const MObject& meshObject, const MBoundingBox& bbox,
     MItMeshPolygon itPoly(meshObject);
     // MGlobal::displayInfo("Building octree...");
     for (; !itPoly.isDone(); itPoly.next()) {
-        MVector normal;
-        itPoly.getNormal(normal, MSpace::kObject);
 
         int numTriangles;
         itPoly.numTriangles(numTriangles);
@@ -46,7 +44,7 @@ MStatus OctreeKernel::build(const MObject& meshObject, const MBoundingBox& bbox,
             MPoint p1 = points[1] * offsetMatrix;
             MPoint p2 = points[2] * offsetMatrix;
 
-            TriangleData triangle(itPoly.index(), i, p0, p1, p2, normal);
+            TriangleData triangle(itPoly.index(), i, p0, p1, p2);
             // Add the triangle to the octree
             insertTriangle(root, triangle, 0);
         }

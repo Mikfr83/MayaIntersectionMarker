@@ -456,14 +456,14 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
     try {
 
         CacheResultType res = this->cache.get(key);
-        this->intersectedFacesA = res.first;
-        this->intersectedFacesB = res.second;
+        this->intersectedFaceIdsA = res.first;
+        this->intersectedFaceIdsB = res.second;
 
     } catch (const std::out_of_range&) {
 
         // The result is not in the cache
-        this->intersectedFacesA.clear();
-        this->intersectedFacesB.clear();
+        this->intersectedFaceIdsA.clear();
+        this->intersectedFaceIdsB.clear();
 
         // Build kernel A
         std::shared_ptr<SpatialDivisionKernel> kernelA = getActiveKernel();
@@ -496,12 +496,10 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
 
             K2KIntersection pairs = kernelA->intersectKernelKernel(*kernelB);
             for (auto pair : pairs.first) {
-                // TODO: implement this later
-                // this->intersectedFacesA.insert(pair.faceIndex);
+                this->intersectedFaceIdsA.insert(pair.faceIndex);
             }
             for (auto pair : pairs.second) {
-                // TODO: implement this later
-                // this->intersectedFacesB.insert(pair.faceIndex);
+                this->intersectedFaceIdsB.insert(pair.faceIndex);
             }
 
         } else {
@@ -512,14 +510,14 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
 
         // -------------------------------------------------------------------------------------------
         // Store the result in the cache
-        CacheResultType res{this->intersectedFacesA, this->intersectedFacesB};
+        CacheResultType res{this->intersectedFaceIdsA, this->intersectedFaceIdsB};
         this->cache.put(key, res);
         modeHandle.setClean();
     }
 
     // Get output data handle
     MDataHandle outputIntersectedHandle = dataBlock.outputValue(outputIntersected, &status);
-    outputIntersectedHandle.set((intersectedFacesA.size() > 0) || (intersectedFacesB.size() > 0));
+    outputIntersectedHandle.set((intersectedFaceIdsA.size() > 0) || (intersectedFaceIdsB.size() > 0));
     outputIntersectedHandle.setClean();
 
     // clean up
@@ -541,11 +539,10 @@ MStatus IntersectionMarkerNode::checkIntersections(
     std::shared_ptr<SpatialDivisionKernel> kernel,
     MMatrix offset
 ){
-
-    // MGlobal::displayInfo("checkIntersections...");
     MStatus status;
-    intersectedFacesA.clear();
-    intersectedFacesB.clear();
+    // MGlobal::displayInfo("checkIntersections...");
+    intersectedFaceIdsA.clear();
+    intersectedFaceIdsB.clear();
 
     // Iterate through the polygons in meshB
     MFnMesh meshBFn(meshBObject);
@@ -561,64 +558,59 @@ MStatus IntersectionMarkerNode::checkIntersections(
     meshBFn.getPoints(vertexPositions, MSpace::kWorld);
 
     // Calculate the offset into the triangleVertices array for each polygon
+    // And similarly, calculate the offset into the triangleIndices array for each polygon
     MIntArray polygonTriangleOffsets(numPolygons, 0);
-    for (int polygonIndex = 1; polygonIndex < numPolygons; polygonIndex++) {
-        polygonTriangleOffsets[polygonIndex] = polygonTriangleOffsets[polygonIndex - 1] + triangleCounts[polygonIndex - 1] * 3;
-    }
+    // MIntArray polygonIndexOffsets(numPolygons, 0);
 
-    // Similarly, calculate the offset into the triangleIndices array for each polygon
-    MIntArray polygonIndexOffsets(numPolygons, 0);
     for (int polygonIndex = 1; polygonIndex < numPolygons; polygonIndex++) {
-        polygonIndexOffsets[polygonIndex] = polygonIndexOffsets[polygonIndex - 1] + triangleCounts[polygonIndex - 1];
+        int previousTriangles = triangleCounts[polygonIndex - 1];
+        polygonTriangleOffsets[polygonIndex] = polygonTriangleOffsets[polygonIndex - 1] + previousTriangles * 3;
+        // polygonIndexOffsets[polygonIndex] = polygonIndexOffsets[polygonIndex - 1] + previousTriangles;
     }
 
     // #pragma omp parallel
     {
-        std::vector<IntersectionMarkerData::FaceData> intersectedFacesLocalA;
-        std::vector<IntersectionMarkerData::FaceData> intersectedFacesLocalB;
+        std::unordered_set<int> intersectedFaceIdsLocalA;
+        std::unordered_set<int> intersectedFaceIdsLocalB;
 
         // #pragma omp for
         for (int polygonIndex = 0; polygonIndex < numPolygons; polygonIndex++) {
 
-            MVector normal;
-            meshBFn.getPolygonNormal(polygonIndex, normal);
-
             TriangleData triangle;
             int numTrianglesInPolygon = triangleCounts[polygonIndex];
             int triangleVerticesOffset = polygonTriangleOffsets[polygonIndex];
-            int triangleIndicesOffset = polygonIndexOffsets[polygonIndex];
+            // int triangleIndicesOffset = polygonIndexOffsets[polygonIndex];
 
             for (int triangleIndex = 0; triangleIndex < numTrianglesInPolygon; triangleIndex++) {
-
                 // Get the vertex positions of each triangle
+
                 int vertexId0 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 0];
                 int vertexId1 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 1];
                 int vertexId2 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 2];
                 MPoint p0 = vertexPositions[vertexId0] * offset;
                 MPoint p1 = vertexPositions[vertexId1] * offset;
                 MPoint p2 = vertexPositions[vertexId2] * offset;
-                TriangleData triangle(polygonIndex, triangleIndex, p0, p1, p2, normal);
+                TriangleData triangle(polygonIndex, triangleIndex, p0, p1, p2);
 
-                // Check intersection between triangle and the kernel
+                // Check intersection between triangle and the octree (kernel)
                 std::vector<TriangleData> intersectedTriangles = kernel->intersectKernelTriangle(triangle);
 
                 // If there is any intersection, store the intersection data into intersectedVertexIdsLocal
                 if (!intersectedTriangles.empty()) {
                     for(int k = 0; k < intersectedTriangles.size(); ++k) {
-                        IntersectionMarkerData::FaceData faceDataA;
-                        faceDataA.vertices.append(intersectedTriangles[k].vertices[0] + intersectedTriangles[k].normal * 0.001);
-                        faceDataA.vertices.append(intersectedTriangles[k].vertices[1] + intersectedTriangles[k].normal * 0.001);
-                        faceDataA.vertices.append(intersectedTriangles[k].vertices[2] + intersectedTriangles[k].normal * 0.001);
-                        intersectedFacesA.push_back(faceDataA);
-
-                        IntersectionMarkerData::FaceData faceDataB;
-                        faceDataB.vertices.append(p0 + normal * 0.001);
-                        faceDataB.vertices.append(p1 + normal * 0.001);
-                        faceDataB.vertices.append(p2 + normal * 0.001);
-                        intersectedFacesB.push_back(faceDataB);
+                        int a = intersectedTriangles[k].faceIndex;
+                        int b = polygonIndex;
+                        intersectedFaceIdsLocalA.insert(a);
+                        intersectedFaceIdsLocalB.insert(b);
                     }
                 }
             }
+        }
+
+        // #pragma omp critical
+        {
+            intersectedFaceIdsA.insert(intersectedFaceIdsLocalA.begin(), intersectedFaceIdsLocalA.end());
+            intersectedFaceIdsB.insert(intersectedFaceIdsLocalB.begin(), intersectedFaceIdsLocalB.end());
         }
     }
 
@@ -650,21 +642,8 @@ std::shared_ptr<SpatialDivisionKernel> IntersectionMarkerNode::getActiveKernel()
 MStatus IntersectionMarkerNode::getInputDagMesh(const MObject inputAttr, MFnMesh &outMesh) const
 {
     MPlug inputMeshPlug(thisMObject(), inputAttr);
-
-    // Get the connected source node of the input plug.
-    MPlugArray connectedPlugs;
-    inputMeshPlug.connectedTo(connectedPlugs, true, false);
-    if (connectedPlugs.length() == 0) {
-        return MStatus::kFailure;  // No source node is connected.
-    }
-    MObject sourceNode = connectedPlugs[0].node();
-
-    // Now sourceNode is the MObject of the connected source node (the mesh node).
-    // To get the MDagPath of the mesh node, use MFnDagNode.
-    MFnDagNode sourceDagNode(sourceNode);
-    MDagPath sourceDagPath;
-    sourceDagNode.getPath(sourceDagPath);
-    outMesh.setObject(sourceDagPath);
+    MObject value = inputMeshPlug.asMObject();
+    outMesh.setObject(value);
     
     return MStatus::kSuccess; 
 }
