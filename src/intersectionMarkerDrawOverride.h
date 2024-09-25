@@ -75,5 +75,12 @@ private:
             const MMatrix& offsetMatrix
     );
 
+    MStatus addIntersectedVertices(
+            const MFnMesh& meshFn,
+            IntersectionMarkerData* data,
+            const std::vector<IntersectionMarkerData::FaceData> &intersectedFaces,
+            const MMatrix& offsetMatrix
+    );
+
     int prevChecksum = -1;
 };

@@ -5,6 +5,7 @@
 #pragma once
 
 #include "SpatialDivisionKernel.h"
+#include "IntersectionMarkerData.h"
 
 #include <string>
 #include <vector>
@@ -143,6 +144,7 @@ std::shared_ptr<SpatialDivisionKernel> getActiveKernel() const;
             MStatus     getChecksumB(int &outChecksum) const;
       MBoundingBox      getBoundingBox(const MObject &meshObject) const;
            MStatus      createMeshFromTriangles(const MObject& meshAObject, const MIntArray& intersectedTriangleIDs, MFnMesh& outputMeshFn);
+            MStatus     getSmoothMode( const MObject inputAttr, int &outSmoothMode ) const;
 
              MPlug      meshAPlug() const { return MPlug(thisMObject(), meshA); }
              MPlug      meshBPlug() const { return MPlug(thisMObject(), meshB); }
@@ -150,6 +152,8 @@ std::shared_ptr<SpatialDivisionKernel> getActiveKernel() const;
 public:
     static MObject      meshA;
     static MObject      meshB;
+    static MObject      smoothMeshA;
+    static MObject      smoothMeshB;
     static MObject      offsetMatrixA;
     static MObject      offsetMatrixB;
     static MObject      restIntersected;
@@ -160,6 +164,11 @@ public:
     static MObject      showMeshB;
     static MObject      kernelType;
     static MObject      collisionMode;
+
+    static MObject      smoothModeA;
+    static MObject      smoothModeB;
+    static MObject      smoothLevelA;
+    static MObject      smoothLevelB;
 
     static MObject      outputIntersected;
     

@@ -109,11 +109,23 @@ MUserData* IntersectionMarkerDrawOverride::prepareForDraw(
     prevChecksum = newChecksum;
 
     MFnMesh meshAFn;
-    status = node->getInputDagMesh(node->meshA, meshAFn);
+    int smoothModeA;
+    status = node->getSmoothMode(node->smoothModeA, smoothModeA);
+    if( smoothModeA == 0 ) {
+        status = node->getInputDagMesh(node->meshA, meshAFn);
+    } else {
+        status = node->getInputDagMesh(node->smoothMeshA, meshAFn);
+    }
     CHECK_MSTATUS_AND_RETURN_DATA("prepareForDraw: meshAFn is null");
 
     MFnMesh meshBFn;
-    status = node->getInputDagMesh(node->meshB, meshBFn);
+    int smoothModeB;
+    status = node->getSmoothMode(node->smoothModeB, smoothModeB);
+    if( smoothModeB == 0 ) {
+        status = node->getInputDagMesh(node->meshB, meshBFn);
+    } else {
+        status = node->getInputDagMesh(node->smoothMeshB, meshBFn);
+    }
     CHECK_MSTATUS_AND_RETURN_DATA("prepareForDraw: meshBFn is null");
 
     // Get the offset matrix
@@ -129,10 +141,12 @@ MUserData* IntersectionMarkerDrawOverride::prepareForDraw(
 
     if (showMeshA) {
         addIntersectedVertices(meshAFn, data, node->intersectedFaceIdsA, outMatrixA);
+        // addIntersectedVertices(meshAFn, data, node->intersectedFacesA, outMatrixA);
     }
 
     if (showMeshB) {
         addIntersectedVertices(meshBFn, data, node->intersectedFaceIdsB, outMatrixB);
+        // addIntersectedVertices(meshBFn, data, node->intersectedFacesB, outMatrixB);
     }
 
     return data;
@@ -147,42 +161,81 @@ MStatus IntersectionMarkerDrawOverride::addIntersectedVertices(
 ) {
     MStatus status;
 
-    MItMeshPolygon itPoly(meshFn.object(), &status);
     CHECK_MSTATUS_AND_RETURN_IT(status);
 
     MIntArray vertexIndices;
     MPointArray vertices;
-    int prevIndex;
+
+
+    MIntArray triangleCounts;   // number of triangles in each face
+    MIntArray triangleVertices; // The triangle vertex Ids for each triangle
+    MIntArray triangleIndices;  // The index array for each triangle in face vertex space
+    MPointArray vertexPositions;
+    MVector normal;
 
     int numPolygons = meshFn.numPolygons();
+    meshFn.getTriangles(triangleCounts, triangleVertices);
+    meshFn.getTriangleOffsets(triangleCounts, triangleIndices);
+    meshFn.getPoints(vertexPositions, MSpace::kObject);  // not having DAG path, so use object space
+
+    // Calculate the offset into the triangleVertices array for each polygon
+    MIntArray polygonTriangleOffsets(numPolygons, 0);
+    MIntArray polygonIndexOffsets(numPolygons, 0);
+    for (int polygonIndex = 1; polygonIndex < numPolygons; polygonIndex++) {
+        int previousTriangles = triangleCounts[polygonIndex - 1];
+        polygonTriangleOffsets[polygonIndex] = polygonTriangleOffsets[polygonIndex - 1] + previousTriangles * 3;
+        polygonIndexOffsets[polygonIndex] = polygonIndexOffsets[polygonIndex - 1] + previousTriangles;
+    }
+
     for (const auto &faceId : intersectedFaceIds) {
-        status = itPoly.setIndex(faceId, prevIndex);
+        if( faceId < 0 || faceId >= numPolygons ) {
+            MString message = "Face ID out of bounds: " + MString(std::to_string(faceId).c_str());
+            MGlobal::displayInfo(message);
+            continue;
+        }
+        TriangleData triangle;
+        int numTrianglesInPolygon = triangleCounts[faceId];
+        int triangleVerticesOffset = polygonTriangleOffsets[faceId];
+        int triangleIndicesOffset = polygonIndexOffsets[faceId];
+
         CHECK_MSTATUS_AND_RETURN_IT(status);
         IntersectionMarkerData::FaceData faceData;
-
-        MVector normal;
         meshFn.getPolygonNormal(faceId, normal);
-        int numTriangles;
-        itPoly.numTriangles(numTriangles);
-        for (int j = 0; j < numTriangles; ++j) {
-            itPoly.getTriangle(j, vertices, vertexIndices, MSpace::kObject);
-            for (unsigned int k = 0; k < vertices.length(); ++k) {
-                // To avoid z-fighting, move the vertex a little bit along the normal
-                vertices[k] += normal * 0.001;
-                vertices[k] *= offsetMatrix;
-                faceData.vertices.append(vertices[k]);
-                faceData.edges.append(vertices[k]);
-                faceData.normals.append(normal);
-            }
-            faceData.edges.append(vertices[0]);  // close the loop of the triangle
-        }
+        for (int triangleIndex = 0; triangleIndex < numTrianglesInPolygon; triangleIndex++) {
+            // Get the vertex positions of each triangle
+            int vertexId0 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 0];
+            int vertexId1 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 1];
+            int vertexId2 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 2];
+            MPoint p0 = vertexPositions[vertexId0] * offsetMatrix;
+            MPoint p1 = vertexPositions[vertexId1] * offsetMatrix;
+            MPoint p2 = vertexPositions[vertexId2] * offsetMatrix;
+            TriangleData triangle(faceId, triangleIndex, p0, p1, p2);
 
-        // Get normal
+            faceData.vertices.append(p0 + normal * 0.001);
+            faceData.vertices.append(p1 + normal * 0.001);
+            faceData.vertices.append(p2 + normal * 0.001);
+        }
         data->faces.push_back(faceData);
     }
 
     return status;
 }
+
+
+// MStatus IntersectionMarkerDrawOverride::addIntersectedVertices(
+//         const MFnMesh& meshFn,
+//         IntersectionMarkerData* data,
+//         const std::vector<IntersectionMarkerData::FaceData> &intersectedFaces,
+//         const MMatrix &offsetMatrix
+// ) {
+//     MStatus status;
+// 
+//     for (const auto &faceData : intersectedFaces) {
+//         data->faces.push_back(faceData);
+//     }
+// 
+//     return status;
+// }
 
 void IntersectionMarkerDrawOverride::addUIDrawables(
     const MDagPath& objPath,
