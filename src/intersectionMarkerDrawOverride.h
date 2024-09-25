@@ -71,7 +71,7 @@ private:
     MStatus addIntersectedVertices(
             const MFnMesh& meshFn,
             IntersectionMarkerData* data,
-            const std::unordered_set<int> &intersectedFaceIds,
+            const std::vector<IntersectionMarkerData::FaceData> &intersectedFaces,
             const MMatrix& offsetMatrix
     );
 

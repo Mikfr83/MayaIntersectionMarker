@@ -16,6 +16,8 @@ std::vector<TriangleData> KDTreeKernel::extractTriangles(
 
     MItMeshPolygon itPoly(meshObject);
     for(; !itPoly.isDone(); itPoly.next()) {
+        MVector normal;
+        itPoly.getNormal(normal, MSpace::kObject);
 
         int numTriangles;
         itPoly.numTriangles(numTriangles);
@@ -29,7 +31,8 @@ std::vector<TriangleData> KDTreeKernel::extractTriangles(
                     triangleId,
                     points[0] * offsetMatrix,
                     points[1] * offsetMatrix,
-                    points[2] * offsetMatrix);
+                    points[2] * offsetMatrix,
+                    normal);
 
             triangles.push_back(triangle);
         }

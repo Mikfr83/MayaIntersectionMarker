@@ -41,9 +41,10 @@ struct TriangleData
     int triangleIndex;
     MPoint vertices[3];
     MBoundingBox bbox;
+    MVector normal;
 
     TriangleData() = default;
-    TriangleData(int faceIndex, int triangleIndex, MPoint v0, MPoint v1, MPoint v2)
+    TriangleData(int faceIndex, int triangleIndex, MPoint v0, MPoint v1, MPoint v2, const MVector& n)
         : faceIndex(faceIndex), triangleIndex(triangleIndex)
     {
         vertices[0] = v0;
@@ -53,6 +54,8 @@ struct TriangleData
         bbox.expand(v0);
         bbox.expand(v1);
         bbox.expand(v2);
+
+        normal = n;
     }
 
     MPoint center() const

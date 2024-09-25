@@ -93,36 +93,47 @@ MStatus IntersectionMarkerCommand::doIt(const MArgList& argList)
     MFnMesh meshFnA(meshA);
     MFnMesh meshFnB(meshB);
     MPlug meshAPlug = MFnDependencyNode(meshFnA.object()).findPlug("outMesh", false, &status);
-    CHECK_MSTATUS_AND_RETURN_IT(status);
     MPlug meshBPlug = MFnDependencyNode(meshFnB.object()).findPlug("outMesh", false, &status);
-    CHECK_MSTATUS_AND_RETURN_IT(status);
 
     MFnDependencyNode markerNodeFn(this->markerNode);
     MPlug markerInMeshAPlug = markerNodeFn.findPlug("inMeshA", false, &status);
-    CHECK_MSTATUS_AND_RETURN_IT(status);
     MPlug markerInMeshBPlug = markerNodeFn.findPlug("inMeshB", false, &status);
-    CHECK_MSTATUS_AND_RETURN_IT(status);
 
     dgMod.connect(meshAPlug, markerInMeshAPlug);
-    status = dgMod.doIt();
-    CHECK_MSTATUS_AND_RETURN_IT(status);
     dgMod.connect(meshBPlug, markerInMeshBPlug);
+
+    // smooth meshes Subdivision
+    MPlug smoothMeshAPlug = MFnDependencyNode(meshFnA.object()).findPlug("outSmoothMesh", false, &status);
+    MPlug smoothMeshBPlug = MFnDependencyNode(meshFnB.object()).findPlug("outSmoothMesh", false, &status);
+    MPlug smoothModeAPlug = MFnDependencyNode(meshFnA.object()).findPlug("displaySmoothMesh", false, &status);
+    MPlug smoothModeBPlug = MFnDependencyNode(meshFnB.object()).findPlug("displaySmoothMesh", false, &status);
+    MPlug smoothLevelAPlug = MFnDependencyNode(meshFnA.object()).findPlug("smoothLevel", false, &status);
+    MPlug smoothLevelBPlug = MFnDependencyNode(meshFnB.object()).findPlug("smoothLevel", false, &status);
+
+    MPlug markerInSmoothMeshAPlug = markerNodeFn.findPlug("inSmoothMeshA", false, &status);
+    MPlug markerInSmoothMeshBPlug = markerNodeFn.findPlug("inSmoothMeshB", false, &status);
+    MPlug markerSmoothModeAPlug = markerNodeFn.findPlug("smoothModeA", false, &status);
+    MPlug markerSmoothModeBPlug = markerNodeFn.findPlug("smoothModeB", false, &status);
+    MPlug markerSmoothLevelAPlug = markerNodeFn.findPlug("smoothLevelA", false, &status);
+    MPlug markerSmoothLevelBPlug = markerNodeFn.findPlug("smoothLevelB", false, &status);
+
+    dgMod.connect(smoothMeshAPlug, markerInSmoothMeshAPlug);
+    dgMod.connect(smoothMeshBPlug, markerInSmoothMeshBPlug);
+    dgMod.connect(smoothModeAPlug, markerSmoothModeAPlug);
+    dgMod.connect(smoothModeBPlug, markerSmoothModeBPlug);
+    dgMod.connect(smoothLevelAPlug, markerSmoothLevelAPlug);
+    dgMod.connect(smoothLevelBPlug, markerSmoothLevelBPlug);
     status = dgMod.doIt();
     CHECK_MSTATUS_AND_RETURN_IT(status);
-    // MGlobal::displayInfo("plug connected");
 
     // offset matrix
     MPlug meshAMatrixPlug = MFnDependencyNode(meshFnA.parent(0)).findPlug("matrix", false, &status);
-    CHECK_MSTATUS_AND_RETURN_IT(status);
-
     MPlug meshBMatrixPlug = MFnDependencyNode(meshFnB.parent(0)).findPlug("matrix", false, &status);
-    CHECK_MSTATUS_AND_RETURN_IT(status);
 
     MPlug markerOffsetAPlug = markerNodeFn.findPlug("offsetMatrixA", false, &status);
     MPlug markerOffsetBPlug = markerNodeFn.findPlug("offsetMatrixB", false, &status);
 
     dgMod.connect(meshAMatrixPlug, markerOffsetAPlug);
-    status = dgMod.doIt();
     dgMod.connect(meshBMatrixPlug, markerOffsetBPlug);
     status = dgMod.doIt();
 

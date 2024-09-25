@@ -6,6 +6,7 @@
 #include "utility.h"
 
 #include "intersectionMarkerNode.h"
+#include "intersectionMarkerData.h"
 
 #include "kernel/KDTreeKernel.h"
 #include "kernel/EmbreeKernel.h"
@@ -46,6 +47,8 @@
 
 MObject IntersectionMarkerNode::meshA;
 MObject IntersectionMarkerNode::meshB;
+MObject IntersectionMarkerNode::smoothMeshA;
+MObject IntersectionMarkerNode::smoothMeshB;
 MObject IntersectionMarkerNode::offsetMatrixA;
 MObject IntersectionMarkerNode::offsetMatrixB;
 MObject IntersectionMarkerNode::restIntersected;
@@ -56,6 +59,11 @@ MObject IntersectionMarkerNode::showMeshA;
 MObject IntersectionMarkerNode::showMeshB;
 MObject IntersectionMarkerNode::kernelType;
 MObject IntersectionMarkerNode::collisionMode;
+
+MObject IntersectionMarkerNode::smoothModeA;
+MObject IntersectionMarkerNode::smoothModeB;
+MObject IntersectionMarkerNode::smoothLevelA;
+MObject IntersectionMarkerNode::smoothLevelB;
 
 MObject IntersectionMarkerNode::outputIntersected;
 CacheType IntersectionMarkerNode::cache(CACHE_SIZE);
@@ -92,6 +100,16 @@ MStatus IntersectionMarkerNode::initialize()
     // Initialize Mesh B
     meshB = tInputAttr.create(MESH_B, MESH_B, MFnData::kMesh, MObject::kNullObj, &status);
     status = addAttribute(meshB);
+    CHECK_MSTATUS_AND_RETURN_IT(status);
+
+    // Initialize Mesh A
+    smoothMeshA = tInputAttr.create("inSmoothMeshA", "inSmoothMeshA", MFnData::kMesh, MObject::kNullObj, &status);
+    status = addAttribute(smoothMeshA);
+    CHECK_MSTATUS_AND_RETURN_IT(status);
+
+    // Initialize Mesh B
+    smoothMeshB = tInputAttr.create("inSmoothMeshB", "inSmoothMeshB", MFnData::kMesh, MObject::kNullObj, &status);
+    status = addAttribute(smoothMeshB);
     CHECK_MSTATUS_AND_RETURN_IT(status);
 
     // Initialize Offset Matrix
@@ -144,6 +162,38 @@ MStatus IntersectionMarkerNode::initialize()
     status = addAttribute(vertexChecksumB);
     CHECK_MSTATUS_AND_RETURN_IT(status);
 
+    smoothModeA = nAttr.create("smoothModeA", "smoothModeA", MFnNumericData::kInt, 0);
+    nAttr.setStorable(false);
+    nAttr.setKeyable(true);
+    nAttr.setWritable(true);
+    nAttr.setReadable(false);
+    status = addAttribute(smoothModeA);
+    CHECK_MSTATUS_AND_RETURN_IT(status);
+
+    smoothModeB = nAttr.create("smoothModeB", "smoothModeB", MFnNumericData::kInt, 0);
+    nAttr.setStorable(false);
+    nAttr.setKeyable(true);
+    nAttr.setWritable(true);
+    nAttr.setReadable(false);
+    status = addAttribute(smoothModeB);
+    CHECK_MSTATUS_AND_RETURN_IT(status);
+
+    smoothLevelA = nAttr.create("smoothLevelA", "smoothLevelA", MFnNumericData::kInt, 0);
+    nAttr.setStorable(true);
+    nAttr.setKeyable(true);
+    nAttr.setWritable(true);
+    nAttr.setReadable(true);
+    status = addAttribute(smoothLevelA);
+    CHECK_MSTATUS_AND_RETURN_IT(status);
+
+    smoothLevelB = nAttr.create("smoothLevelB", "smoothLevelB", MFnNumericData::kInt, 0);
+    nAttr.setStorable(true);
+    nAttr.setKeyable(true);
+    nAttr.setWritable(true);
+    nAttr.setReadable(true);
+    status = addAttribute(smoothLevelB);
+    CHECK_MSTATUS_AND_RETURN_IT(status);
+
     // Initialize Kernel
     kernelType = eAttr.create(KERNEL, KERNEL, 0, &status);
     CHECK_MSTATUS_AND_RETURN_IT(status);
@@ -171,6 +221,9 @@ MStatus IntersectionMarkerNode::initialize()
     CHECK_MSTATUS_AND_RETURN_IT(status);
 
     // Add dependencies
+    status = attributeAffects(smoothModeA, vertexChecksumA);
+    status = attributeAffects(smoothModeB, vertexChecksumB);
+
     status = attributeAffects(meshA, vertexChecksumA);
     status = attributeAffects(meshB, vertexChecksumB);
     status = attributeAffects(offsetMatrixA, vertexChecksumA);
@@ -182,6 +235,7 @@ MStatus IntersectionMarkerNode::initialize()
     status = attributeAffects(meshB, outputIntersected);
     status = attributeAffects(showMeshA, outputIntersected);
     status = attributeAffects(showMeshB, outputIntersected);
+
     CHECK_MSTATUS_AND_RETURN_IT(status);
 
     status = attributeAffects(kernelType, outputIntersected);
@@ -200,25 +254,15 @@ MStatus IntersectionMarkerNode::preEvaluation(
         MStatus status;
         bool dirty = false;
         dirty = dirty || evaluationNode.dirtyPlugExists(meshA, &status);
-        CHECK_MSTATUS_AND_RETURN_IT(status);
-
         dirty = dirty || evaluationNode.dirtyPlugExists(meshB, &status);
-        CHECK_MSTATUS_AND_RETURN_IT(status);
-
         dirty = dirty || evaluationNode.dirtyPlugExists(offsetMatrixA, &status);
-        CHECK_MSTATUS_AND_RETURN_IT(status);
-
         dirty = dirty || evaluationNode.dirtyPlugExists(offsetMatrixB, &status);
-        CHECK_MSTATUS_AND_RETURN_IT(status);
-
         dirty = dirty || evaluationNode.dirtyPlugExists(kernelType, &status);
-        CHECK_MSTATUS_AND_RETURN_IT(status);
-
         dirty = dirty || evaluationNode.dirtyPlugExists(collisionMode, &status);
         dirty = dirty || evaluationNode.dirtyPlugExists(showMeshA, &status);
-        CHECK_MSTATUS_AND_RETURN_IT(status);
-
         dirty = dirty || evaluationNode.dirtyPlugExists(showMeshB, &status);
+        dirty = dirty || evaluationNode.dirtyPlugExists(smoothModeA, &status);
+        dirty = dirty || evaluationNode.dirtyPlugExists(smoothModeB, &status);
         CHECK_MSTATUS_AND_RETURN_IT(status);
 
         if (dirty) {
@@ -253,7 +297,9 @@ MStatus IntersectionMarkerNode::postEvaluation(
         (evaluationNode.dirtyPlugExists(kernelType, &status) && status ) ||
         (evaluationNode.dirtyPlugExists(collisionMode, &status) && status ) ||
         (evaluationNode.dirtyPlugExists(showMeshA, &status) && status ) ||
-        (evaluationNode.dirtyPlugExists(showMeshB, &status) && status )
+        (evaluationNode.dirtyPlugExists(showMeshB, &status) && status ) ||
+        (evaluationNode.dirtyPlugExists(smoothModeA, &status) && status ) ||
+        (evaluationNode.dirtyPlugExists(smoothModeB, &status) && status )
     ) {
         MDataBlock block = forceCache();
         MDataHandle meshAHandle = block.inputValue(meshA, &status);
@@ -302,9 +348,67 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
         return status;
     }
 
+    MDataHandle smoothModeAHandle = dataBlock.inputValue(smoothModeA);
+    if(status != MStatus::kSuccess) {
+        MGlobal::displayError("Failed to get smoothModeA data handle");
+        return status;
+    }
+
+    MDataHandle smoothModeBHandle = dataBlock.inputValue(smoothModeB);
+    if(status != MStatus::kSuccess) {
+        MGlobal::displayError("Failed to get smoothModeB data handle");
+        return status;
+    }
+
+    MDataHandle smoothLevelAHandle = dataBlock.inputValue(smoothLevelA);
+    if(status != MStatus::kSuccess) {
+        MGlobal::displayError("Failed to get smoothLevelA data handle");
+        return status;
+    }
+
+    MDataHandle smoothLevelBHandle = dataBlock.inputValue(smoothLevelB);
+    if(status != MStatus::kSuccess) {
+        MGlobal::displayError("Failed to get smoothLevelB data handle");
+        return status;
+    }
+
+    MDataHandle smoothMeshAHandle = dataBlock.inputValue(smoothMeshA);
+    if(status != MStatus::kSuccess) {
+        MGlobal::displayError("Failed to get smoothMeshA data handle");
+        return status;
+    }
+
+    MDataHandle smoothMeshBHandle = dataBlock.inputValue(smoothMeshB);
+    if(status != MStatus::kSuccess) {
+        MGlobal::displayError("Failed to get smoothMeshB data handle");
+        return status;
+    }
+
+    int smoothModeAObject = smoothModeAHandle.asInt();
+    int smoothModeBObject = smoothModeBHandle.asInt();
+
+    smoothModeAHandle.setClean();
+    smoothModeBHandle.setClean();
+    smoothLevelAHandle.setClean();
+    smoothLevelBHandle.setClean();
+
     // Get the MObject of the meshes
-    MObject meshAObject = meshAHandle.asMesh();
-    MObject meshBObject = meshBHandle.asMesh();
+    // MObject meshAObject = meshAHandle.asMesh();
+    // MObject meshBObject = meshBHandle.asMesh();
+    MObject meshAObject;
+    if( smoothModeAObject == 0 ) {
+        meshAObject = meshAHandle.asMesh();
+    } else {
+        meshAObject = smoothMeshAHandle.asMesh();
+    }
+
+    MObject meshBObject;
+    if( smoothModeBObject == 0 ) {
+        meshBObject = meshBHandle.asMesh();
+    } else {
+        meshBObject = smoothMeshBHandle.asMesh();
+    }
+
     MMatrix offsetA = offsetAHandle.asMatrix();
     MMatrix offsetB = offsetBHandle.asMatrix();
 
@@ -318,8 +422,8 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
     // -------------------------------------------------------------------------------------------
     // update checksums
     // MGlobal::displayInfo("update checksums...");
-    int newCheckA = getVertexChecksum(meshAObject, offsetA);
-    int newCheckB = getVertexChecksum(meshBObject, offsetB);
+    int newCheckA = getVertexChecksum(meshAObject, offsetA) ^ smoothModeAObject;
+    int newCheckB = getVertexChecksum(meshBObject, offsetB) ^ smoothModeBObject;
 
     MDataHandle vertexChecksumAHandle = dataBlock.outputValue(vertexChecksumA);
     MDataHandle vertexChecksumBHandle = dataBlock.outputValue(vertexChecksumB);
@@ -352,14 +456,14 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
     try {
 
         CacheResultType res = this->cache.get(key);
-        this->intersectedFaceIdsA = res.first;
-        this->intersectedFaceIdsB = res.second;
+        this->intersectedFacesA = res.first;
+        this->intersectedFacesB = res.second;
 
     } catch (const std::out_of_range&) {
 
         // The result is not in the cache
-        this->intersectedFaceIdsA.clear();
-        this->intersectedFaceIdsB.clear();
+        this->intersectedFacesA.clear();
+        this->intersectedFacesB.clear();
 
         // Build kernel A
         std::shared_ptr<SpatialDivisionKernel> kernelA = getActiveKernel();
@@ -392,10 +496,12 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
 
             K2KIntersection pairs = kernelA->intersectKernelKernel(*kernelB);
             for (auto pair : pairs.first) {
-                this->intersectedFaceIdsA.insert(pair.faceIndex);
+                // TODO: implement this later
+                // this->intersectedFacesA.insert(pair.faceIndex);
             }
             for (auto pair : pairs.second) {
-                this->intersectedFaceIdsB.insert(pair.faceIndex);
+                // TODO: implement this later
+                // this->intersectedFacesB.insert(pair.faceIndex);
             }
 
         } else {
@@ -406,14 +512,14 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
 
         // -------------------------------------------------------------------------------------------
         // Store the result in the cache
-        CacheResultType res{this->intersectedFaceIdsA, this->intersectedFaceIdsB};
+        CacheResultType res{this->intersectedFacesA, this->intersectedFacesB};
         this->cache.put(key, res);
         modeHandle.setClean();
     }
 
     // Get output data handle
     MDataHandle outputIntersectedHandle = dataBlock.outputValue(outputIntersected, &status);
-    outputIntersectedHandle.set((intersectedFaceIdsA.size() > 0) || (intersectedFaceIdsB.size() > 0));
+    outputIntersectedHandle.set((intersectedFacesA.size() > 0) || (intersectedFacesB.size() > 0));
     outputIntersectedHandle.setClean();
 
     // clean up
@@ -422,16 +528,24 @@ MStatus IntersectionMarkerNode::compute(const MPlug &plug, MDataBlock &dataBlock
     outputIntersectedHandle.setClean();
     dataBlock.setClean(plug);
 
+    smoothMeshAHandle.setClean();
+    smoothMeshBHandle.setClean();
+
     return MStatus::kSuccess;
 }
 
 
-MStatus IntersectionMarkerNode::checkIntersections(MObject &meshAObject, MObject &meshBObject, std::shared_ptr<SpatialDivisionKernel> kernel, MMatrix offset)
-{
-    MStatus status;
+MStatus IntersectionMarkerNode::checkIntersections(
+    MObject &meshAObject,
+    MObject &meshBObject,
+    std::shared_ptr<SpatialDivisionKernel> kernel,
+    MMatrix offset
+){
+
     // MGlobal::displayInfo("checkIntersections...");
-    intersectedFaceIdsA.clear();
-    intersectedFaceIdsB.clear();
+    MStatus status;
+    intersectedFacesA.clear();
+    intersectedFacesB.clear();
 
     // Iterate through the polygons in meshB
     MFnMesh meshBFn(meshBObject);
@@ -460,11 +574,14 @@ MStatus IntersectionMarkerNode::checkIntersections(MObject &meshAObject, MObject
 
     // #pragma omp parallel
     {
-        std::unordered_set<int> intersectedFaceIdsLocalA;
-        std::unordered_set<int> intersectedFaceIdsLocalB;
+        std::vector<IntersectionMarkerData::FaceData> intersectedFacesLocalA;
+        std::vector<IntersectionMarkerData::FaceData> intersectedFacesLocalB;
 
         // #pragma omp for
         for (int polygonIndex = 0; polygonIndex < numPolygons; polygonIndex++) {
+
+            MVector normal;
+            meshBFn.getPolygonNormal(polygonIndex, normal);
 
             TriangleData triangle;
             int numTrianglesInPolygon = triangleCounts[polygonIndex];
@@ -472,35 +589,36 @@ MStatus IntersectionMarkerNode::checkIntersections(MObject &meshAObject, MObject
             int triangleIndicesOffset = polygonIndexOffsets[polygonIndex];
 
             for (int triangleIndex = 0; triangleIndex < numTrianglesInPolygon; triangleIndex++) {
-                // Get the vertex positions of each triangle
 
+                // Get the vertex positions of each triangle
                 int vertexId0 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 0];
                 int vertexId1 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 1];
                 int vertexId2 = triangleVertices[triangleVerticesOffset + triangleIndex * 3 + 2];
                 MPoint p0 = vertexPositions[vertexId0] * offset;
                 MPoint p1 = vertexPositions[vertexId1] * offset;
                 MPoint p2 = vertexPositions[vertexId2] * offset;
-                TriangleData triangle(polygonIndex, triangleIndex, p0, p1, p2);
+                TriangleData triangle(polygonIndex, triangleIndex, p0, p1, p2, normal);
 
-                // Check intersection between triangle and the octree (kernel)
+                // Check intersection between triangle and the kernel
                 std::vector<TriangleData> intersectedTriangles = kernel->intersectKernelTriangle(triangle);
 
                 // If there is any intersection, store the intersection data into intersectedVertexIdsLocal
                 if (!intersectedTriangles.empty()) {
                     for(int k = 0; k < intersectedTriangles.size(); ++k) {
-                        int a = intersectedTriangles[k].faceIndex;
-                        int b = polygonIndex;
-                        intersectedFaceIdsLocalA.insert(a);
-                        intersectedFaceIdsLocalB.insert(b);
+                        IntersectionMarkerData::FaceData faceDataA;
+                        faceDataA.vertices.append(intersectedTriangles[k].vertices[0] + intersectedTriangles[k].normal * 0.001);
+                        faceDataA.vertices.append(intersectedTriangles[k].vertices[1] + intersectedTriangles[k].normal * 0.001);
+                        faceDataA.vertices.append(intersectedTriangles[k].vertices[2] + intersectedTriangles[k].normal * 0.001);
+                        intersectedFacesA.push_back(faceDataA);
+
+                        IntersectionMarkerData::FaceData faceDataB;
+                        faceDataB.vertices.append(p0 + normal * 0.001);
+                        faceDataB.vertices.append(p1 + normal * 0.001);
+                        faceDataB.vertices.append(p2 + normal * 0.001);
+                        intersectedFacesB.push_back(faceDataB);
                     }
                 }
             }
-        }
-
-        // #pragma omp critical
-        {
-            intersectedFaceIdsA.insert(intersectedFaceIdsLocalA.begin(), intersectedFaceIdsLocalA.end());
-            intersectedFaceIdsB.insert(intersectedFaceIdsLocalB.begin(), intersectedFaceIdsLocalB.end());
         }
     }
 
@@ -531,7 +649,6 @@ std::shared_ptr<SpatialDivisionKernel> IntersectionMarkerNode::getActiveKernel()
 
 MStatus IntersectionMarkerNode::getInputDagMesh(const MObject inputAttr, MFnMesh &outMesh) const
 {
-    MStatus status;
     MPlug inputMeshPlug(thisMObject(), inputAttr);
 
     // Get the connected source node of the input plug.
@@ -553,9 +670,18 @@ MStatus IntersectionMarkerNode::getInputDagMesh(const MObject inputAttr, MFnMesh
 }
 
 
+MStatus IntersectionMarkerNode::getSmoothMode( const MObject inputAttr, int &outSmoothMode ) const
+{
+    MPlug inputMeshPlug(thisMObject(), inputAttr);
+
+    outSmoothMode = inputMeshPlug.asInt();
+    return MStatus::kSuccess;
+
+}
+
+
 MStatus IntersectionMarkerNode::getOffsetMatrix(const MObject inputAttr, MMatrix &outMatrix) const
 {
-    MStatus status;
     MPlug inputMeshPlug(thisMObject(), inputAttr);
 
     MObject value = inputMeshPlug.asMObject();
@@ -584,7 +710,6 @@ MBoundingBox IntersectionMarkerNode::getBoundingBox(const MObject &meshObject) c
 
 MStatus IntersectionMarkerNode::getChecksumA(int &outChecksum) const
 {
-    MStatus status;
     MPlug checksumPlug(thisMObject(), vertexChecksumA);
     outChecksum = checksumPlug.asInt();
     return MStatus::kSuccess;
@@ -593,7 +718,6 @@ MStatus IntersectionMarkerNode::getChecksumA(int &outChecksum) const
 
 MStatus IntersectionMarkerNode::getChecksumB(int &outChecksum) const
 {
-    MStatus status;
     MPlug checksumPlug(thisMObject(), vertexChecksumB);
     outChecksum = checksumPlug.asInt();
     return MStatus::kSuccess;

@@ -5,6 +5,8 @@
 #pragma once
 
 #include "SpatialDivisionKernel.h"
+#include "IntersectionMarkerData.h"
+#include "utility.h"
 
 #include <string>
 #include <vector>
@@ -57,8 +59,8 @@ struct pair_hash {
 
 // The type for the value of the cache
 struct CacheResultType {
-    std::unordered_set<int> first;
-    std::unordered_set<int> second;
+    std::vector<IntersectionMarkerData::FaceData> first;
+    std::vector<IntersectionMarkerData::FaceData> second;
 };
 
 
@@ -143,6 +145,7 @@ std::shared_ptr<SpatialDivisionKernel> getActiveKernel() const;
             MStatus     getChecksumB(int &outChecksum) const;
       MBoundingBox      getBoundingBox(const MObject &meshObject) const;
            MStatus      createMeshFromTriangles(const MObject& meshAObject, const MIntArray& intersectedTriangleIDs, MFnMesh& outputMeshFn);
+            MStatus     getSmoothMode( const MObject inputAttr, int &outSmoothMode ) const;
 
              MPlug      meshAPlug() const { return MPlug(thisMObject(), meshA); }
              MPlug      meshBPlug() const { return MPlug(thisMObject(), meshB); }
@@ -150,6 +153,8 @@ std::shared_ptr<SpatialDivisionKernel> getActiveKernel() const;
 public:
     static MObject      meshA;
     static MObject      meshB;
+    static MObject      smoothMeshA;
+    static MObject      smoothMeshB;
     static MObject      offsetMatrixA;
     static MObject      offsetMatrixB;
     static MObject      restIntersected;
@@ -161,6 +166,11 @@ public:
     static MObject      kernelType;
     static MObject      collisionMode;
 
+    static MObject      smoothModeA;
+    static MObject      smoothModeB;
+    static MObject      smoothLevelA;
+    static MObject      smoothLevelB;
+
     static MObject      outputIntersected;
     
     static MString      NODE_NAME;
@@ -170,6 +180,9 @@ public:
     static MString      drawRegistrantId;
 
   static CacheType      cache;
-    std::unordered_set<int> intersectedFaceIdsA;
-    std::unordered_set<int> intersectedFaceIdsB;
+    // std::unordered_set<int> intersectedFaceIdsA;
+    // std::unordered_set<int> intersectedFaceIdsB;
+
+    std::vector<IntersectionMarkerData::FaceData> intersectedFacesA;
+    std::vector<IntersectionMarkerData::FaceData> intersectedFacesB;
 };
